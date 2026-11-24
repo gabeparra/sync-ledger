@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Event-Driven Integration & Cross-System Reconciliation Engine with Transactional Outbox, HMAC Webhooks, Idempotency, Audit Diffs, and DLQ Replay."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [{ name = "Mariano Gabriel Parra" }]
 dependencies = [
     "alembic>=1.14.0",
