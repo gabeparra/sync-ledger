@@ -56,9 +56,7 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint(
-            "source_system", "idempotency_key", name="uq_idempotency_source_key"
-        ),
+        sa.UniqueConstraint("source_system", "idempotency_key", name="uq_idempotency_source_key"),
     )
     op.create_index("ix_idempotency_keys_source_system", "idempotency_keys", ["source_system"])
 
