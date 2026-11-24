@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sync_ledger}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sync_ledger}
+      POSTGRES_DB: ${POSTGRES_DB:-sync_ledger}
+    ports:
+      - "5432:5432"
+    volumes:
+      - sync_ledger_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sync_ledger} -d ${POSTGRES_DB:-sync_ledger}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      SYNC_LEDGER_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sync_ledger}:${POSTGRES_PASSWORD:-sync_ledger}@postgres:5432/${POSTGRES_DB:-sync_ledger}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    command: ["uvicorn", "sync_ledger.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    environment:
+      SYNC_LEDGER_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sync_ledger}:${POSTGRES_PASSWORD:-sync_ledger}@postgres:5432/${POSTGRES_DB:-sync_ledger}
+      SYNC_LEDGER_WEBHOOK_SECRET: ${SYNC_LEDGER_WEBHOOK_SECRET:-dev-shared-webhook-secret-change-me}
+      SYNC_LEDGER_LOG_LEVEL: ${SYNC_LEDGER_LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build: .
+    command: ["sync-ledger", "worker", "run"]
+    environment:
+      SYNC_LEDGER_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sync_ledger}:${POSTGRES_PASSWORD:-sync_ledger}@postgres:5432/${POSTGRES_DB:-sync_ledger}
+      SYNC_LEDGER_WEBHOOK_SECRET: ${SYNC_LEDGER_WEBHOOK_SECRET:-dev-shared-webhook-secret-change-me}
+      SYNC_LEDGER_WORKER_ID: worker-docker-1
+      SYNC_LEDGER_LOG_LEVEL: ${SYNC_LEDGER_LOG_LEVEL:-INFO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  sync_ledger_pgdata:

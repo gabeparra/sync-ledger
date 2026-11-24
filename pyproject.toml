@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sync-ledger"
+version = "0.1.0"
+description = "Event-Driven Integration & Cross-System Reconciliation Engine with Transactional Outbox, HMAC Webhooks, Idempotency, Audit Diffs, and DLQ Replay."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Mariano Gabriel Parra" }]
+dependencies = [
+    "alembic>=1.14.0",
+    "fastapi>=0.115.0",
+    "httpx>=0.27.0",
+    "prometheus-client>=0.21.0",
+    "psycopg[binary]>=3.2.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy>=2.0.36",
+    "typer>=0.13.0",
+    "uvicorn[standard]>=0.32.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13.0",
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.7.0",
+]
+
+[project.scripts]
+sync-ledger = "sync_ledger.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sync_ledger"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "unit: fast isolated unit tests",
+    "integration: end-to-end database and API integration tests",
+]
