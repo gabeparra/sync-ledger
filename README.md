@@ -1,22 +1,22 @@
 # sync-ledger
 
-**Event-Driven Integration & Cross-System Reconciliation Engine** built in Python (FastAPI, Pydantic v2, SQLAlchemy 2.0, PostgreSQL, Prometheus) to connect heterogeneous systems that share **no common primary key**: with cryptographic webhook verification, strict idempotency, transactional outbox delivery, field-level drift auditing, exponential retry backoff, and a Dead Letter Queue (DLQ) replay CLI.
+An event-driven integration and cross-system reconciliation engine written in Python (FastAPI, Pydantic v2, SQLAlchemy 2.0, PostgreSQL, Prometheus). It connects systems that share no common primary key, and provides HMAC webhook verification, idempotent ingestion, transactional outbox delivery, field-level drift auditing, exponential retry backoff, and a Dead Letter Queue (DLQ) replay CLI.
 
 ---
 
 ## Why This Exists
 
-Real-world enterprise integrations rarely share a clean global UUID:
+Enterprise integrations rarely share a clean global UUID:
 
 - **CRM** identifies a customer as `sf_001A` (`Acme Corp.`, `(415) 555-0199`, `ops@acme.io`)
 - **Billing** identifies the same customer as `cus_stripe_99` (`ACME Inc`, `+1-415-555-0199`, `12-3456789`, `$2,450.00`)
 - **ERP** identifies the same customer as `NS-4401` (`Acme Corporation`, `123456789`, `ap@acme.io`, `$2,400.00`)
 
-`sync-ledger` solves the hard operational problems that arise at this boundary:
-1. **Untrusted / duplicated webhook delivery**: solved with constant-time HMAC-SHA256 verification, timestamp replay-window protection, and SHA-256 request-hash idempotency deduplication (`202` cached replay vs `409 Conflict` on payload mutation).
-2. **Dual-write consistency**: solved with the **Transactional Outbox Pattern**: `inbound_events`, `idempotency_keys`, and `outbox_messages` commit atomically inside a single PostgreSQL transaction.
-3. **Cross-system entity resolution without a shared primary key**: solved with indexed candidate blocking, canonical field normalization (E.164 phones, legal-suffix folding, tax ID / invoice reference stripping), weighted multi-signal confidence scoring, and explicit disqualifiers (conflicting legal `tax_id`s never auto-merge).
-4. **Silent data drift & broken payloads**: solved with source-of-truth field authority policies, formatting-noise suppression (so `(415) 555-0199` vs `+14155550199` never pages on-call), immutable **Reconciliation Diff Snapshots**, anomaly flagging (`cross_system_drift`, `duplicate_record`, `ambiguous_match`, `malformed_record`), exponential retry backoff with jitter, and **DLQ replay with optional JSON payload patching**.
+`sync-ledger` addresses the operational problems that show up at this boundary:
+1. **Untrusted or duplicated webhook delivery.** Constant-time HMAC-SHA256 verification, a timestamp replay window, and SHA-256 request-hash idempotency deduplication (`202` cached replay vs `409 Conflict` on payload mutation).
+2. **Dual-write consistency.** The transactional outbox pattern: `inbound_events`, `idempotency_keys`, and `outbox_messages` commit atomically inside a single PostgreSQL transaction.
+3. **Cross-system entity resolution without a shared primary key.** Indexed candidate blocking, canonical field normalization (E.164 phones, legal-suffix folding, tax ID and invoice reference stripping), weighted multi-signal confidence scoring, and explicit disqualifiers (conflicting legal `tax_id`s never auto-merge).
+4. **Silent data drift and broken payloads.** Source-of-truth field authority policies, formatting-noise suppression (so `(415) 555-0199` vs `+14155550199` never pages on-call), immutable reconciliation diff snapshots, anomaly flagging (`cross_system_drift`, `duplicate_record`, `ambiguous_match`, `malformed_record`), exponential retry backoff with jitter, and DLQ replay with optional JSON payload patching.
 
 ---
 
@@ -176,12 +176,12 @@ When CRM (`sf_001A`), Billing (`cus_stripe_99`), and ERP (`NS-4401`) sync the sa
 
 ### HTTP Endpoints
 
-- `POST /v1/webhooks/{source_system}`: Verified, idempotent webhook ingestion writing transactional outbox
-- `GET /v1/entities` & `GET /v1/entities/{entity_id}`: Unified canonical records, cross-system `entity_links`, and `source_records`
-- `GET /v1/reconciliations/snapshots`: Immutable audit & diff trail (`?drift_only=true`, `?canonical_entity_id=...`)
-- `GET /v1/reconciliations/anomalies`: Open/historical anomalies (`malformed_record`, `duplicate_record`, `ambiguous_match`, `cross_system_drift`)
-- `GET /v1/dlq` & `POST /v1/dlq/{dlq_id}/replay`: Inspect and replay dead-lettered messages
-- `GET /health` & `GET /health/ready`: Liveness & readiness probes (DB connectivity + queue depth)
+- `POST /v1/webhooks/{source_system}`: verified, idempotent webhook ingestion that writes the transactional outbox
+- `GET /v1/entities` and `GET /v1/entities/{entity_id}`: unified canonical records, cross-system `entity_links`, and `source_records`
+- `GET /v1/reconciliations/snapshots`: immutable audit and diff trail (`?drift_only=true`, `?canonical_entity_id=...`)
+- `GET /v1/reconciliations/anomalies`: open and historical anomalies (`malformed_record`, `duplicate_record`, `ambiguous_match`, `cross_system_drift`)
+- `GET /v1/dlq` and `POST /v1/dlq/{dlq_id}/replay`: inspect and replay dead-lettered messages
+- `GET /health` and `GET /health/ready`: liveness and readiness probes (DB connectivity and queue depth)
 - `GET /metrics`: Prometheus exposition metrics
 
 ### Operations & DLQ Replay CLI (`sync-ledger`)
@@ -257,3 +257,9 @@ uv run pytest --cov=sync_ledger --cov-report=term-missing
 TEST_DATABASE_URL=postgresql+psycopg://sync_ledger:sync_ledger@localhost:5432/sync_ledger \
   uv run pytest -v
 ```
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE). Copyright (c) 2026 Mariano Gabriel Parra.
