@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.12
+      - name: Ruff format check
+        run: uv run ruff format --check src tests
+      - name: Ruff lint
+        run: uv run ruff check src tests
+      - name: Mypy strict check
+        run: uv run mypy src
+
+  test-sqlite:
+    name: Unit & Fast Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.12
+      - name: Run pytest with coverage
+        run: uv run pytest --cov=sync_ledger --cov-report=term-missing
+
+  test-postgres:
+    name: PostgreSQL 16 + Alembic Integration Suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sync_ledger
+          POSTGRES_PASSWORD: sync_ledger
+          POSTGRES_DB: sync_ledger_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U sync_ledger -d sync_ledger_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      SYNC_LEDGER_DATABASE_URL: postgresql+psycopg://sync_ledger:sync_ledger@localhost:5432/sync_ledger_test
+      TEST_DATABASE_URL: postgresql+psycopg://sync_ledger:sync_ledger@localhost:5432/sync_ledger_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.12
+      - name: Run Alembic migrations
+        run: uv run alembic upgrade head
+      - name: Run full test suite against PostgreSQL
+        run: uv run pytest -v
+
+  docker-build:
+    name: Docker Image Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container image
+        run: docker build -t sync-ledger:ci .
