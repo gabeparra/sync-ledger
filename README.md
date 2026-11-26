@@ -2,6 +2,8 @@
 
 An event-driven integration and cross-system reconciliation engine written in Python (FastAPI, Pydantic v2, SQLAlchemy 2.0, PostgreSQL, Prometheus). It connects systems that share no common primary key, and provides HMAC webhook verification, idempotent ingestion, transactional outbox delivery, field-level drift auditing, exponential retry backoff, and a Dead Letter Queue (DLQ) replay CLI.
 
+**Status:** `Maintained` - reference FastAPI and PostgreSQL webhook ingestion and cross-system reconciliation engine.
+
 ---
 
 ## Why This Exists
