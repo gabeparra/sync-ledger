@@ -4,6 +4,8 @@ An event-driven integration and cross-system reconciliation engine written in Py
 
 **Status:** `Maintained` - reference FastAPI and PostgreSQL webhook ingestion and cross-system reconciliation engine.
 
+> A personal project. The integration code I've written for work lives in private repos, so this rebuilds the same patterns in the open, small enough to read in an afternoon. It runs on SQLite for the fast tests or on PostgreSQL 16 with the full Docker Compose stack.
+
 ---
 
 ## Why This Exists
@@ -66,7 +68,7 @@ flowchart LR
 | **Webhook Security** | `HMAC-SHA256` over `<timestamp>.<raw_body>` with `hmac.compare_digest` + ±300s timestamp window + per-source secrets | Prevents tampering, timing side-channels, and stale replay attacks |
 | **Idempotency** | `UNIQUE(source_system, idempotency_key)` + SHA-256 `request_hash` + `IntegrityError` concurrency fallback | Duplicate retries return cached `202` (`X-Idempotency-Replayed: true`); reusing a key with mutated bytes returns `409 Conflict` |
 | **Transactional Outbox** | Single ACID transaction writes `inbound_events` + `idempotency_keys` + `outbox_messages` | Eliminates dual-write failure modes between DB commits and async processing |
-| **Concurrent Workers** | `SELECT ... FOR UPDATE SKIP LOCKED` on PostgreSQL (`available_at <= now()`) | Allows horizontal worker scaling without double-processing leased messages |
+| **Concurrent Workers** | `SELECT ... FOR UPDATE SKIP LOCKED` on PostgreSQL (`available_at <= now()`) + lease timeout on `processing` claims (`SYNC_LEDGER_OUTBOX_LEASE_TIMEOUT_SECONDS`, default 300s) | Allows horizontal worker scaling without double-processing leased messages; a worker killed mid-batch can't strand its claims, and a message that keeps killing workers ends up in the DLQ as `lease_expired` |
 | **Entity Resolution (No Shared ID)** | Indexed blocking (`tax_id`, `email`, `phone`, `name`, `invoice_number`) + weighted multi-signal scoring + `tax_id` conflict disqualifier | Connects CRM/Billing/ERP deterministically without O(N) full scans or false merges |
 | **Drift Diffs & Audit Trail** | Field-level source-of-truth authority (`erp` for `tax_id`, `billing` for `balance_cents`, `crm` for `email`) + normalized comparison + immutable `reconciliation_snapshots` | Surfaces real business drift (`$2,450` vs `$2,400`) while ignoring cosmetic formatting noise |
 | **Resilience & Recovery** | Capped exponential backoff + jitter for transient failures; immediate DLQ + anomaly on poison pills; transactional CLI/API replay with `--patch-json` | Operators can inspect, patch malformed fields, and replay safely with full audit counts |
