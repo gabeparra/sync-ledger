@@ -9,7 +9,7 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:0.6.6 /uv /bin/uv
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY alembic.ini ./
 COPY alembic ./alembic
