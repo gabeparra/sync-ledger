@@ -7,10 +7,10 @@ import signal
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from sync_ledger.config import Settings
@@ -66,13 +66,29 @@ class OutboxWorker:
         self._stop_requested = True
 
     def claim_batch(self, session: Session, *, now: datetime | None = None) -> list[str]:
-        """Claim up to `outbox_batch_size` due messages using FOR UPDATE SKIP LOCKED on Postgres."""
+        """Claim up to `outbox_batch_size` due messages using FOR UPDATE SKIP LOCKED on Postgres.
+
+        A message left in 'processing' longer than `outbox_lease_timeout_seconds` belongs to a
+        worker that died mid-batch, so it is reclaimed. The lost run counts as an attempt, which
+        keeps a message that crashes every worker from cycling forever: once its attempts are
+        spent it goes to the DLQ as `lease_expired` instead of being retried again.
+        """
         current_time = now or utc_now()
+        lease_cutoff = current_time - timedelta(seconds=self.settings.outbox_lease_timeout_seconds)
         stmt = (
             select(OutboxMessage)
             .where(
-                OutboxMessage.status.in_(("pending", "retry_scheduled")),
-                OutboxMessage.available_at <= current_time,
+                or_(
+                    and_(
+                        OutboxMessage.status.in_(("pending", "retry_scheduled")),
+                        OutboxMessage.available_at <= current_time,
+                    ),
+                    and_(
+                        OutboxMessage.status == "processing",
+                        OutboxMessage.locked_at.is_not(None),
+                        OutboxMessage.locked_at <= lease_cutoff,
+                    ),
+                )
             )
             .order_by(OutboxMessage.available_at.asc(), OutboxMessage.created_at.asc())
             .limit(self.settings.outbox_batch_size)
@@ -85,6 +101,23 @@ class OutboxWorker:
         messages = list(session.scalars(stmt))
         claimed_ids: list[str] = []
         for msg in messages:
+            if msg.status == "processing":
+                previous_owner = msg.locked_by
+                msg.attempts += 1
+                msg.last_error = f"lease expired while held by {previous_owner or 'unknown worker'}"
+                logger.warning(
+                    "outbox_stale_lease_reclaimed",
+                    extra={
+                        "outbox_id": msg.id,
+                        "event_id": msg.event_id,
+                        "previous_owner": previous_owner,
+                        "attempts": msg.attempts,
+                    },
+                )
+                if msg.attempts >= msg.max_attempts:
+                    self._dead_letter_expired_lease(session, msg, current_time)
+                    continue
+
             msg.status = "processing"
             msg.locked_by = self.settings.worker_id
             msg.locked_at = current_time
@@ -92,6 +125,30 @@ class OutboxWorker:
 
         session.commit()
         return claimed_ids
+
+    def _dead_letter_expired_lease(
+        self, session: Session, msg: OutboxMessage, current_time: datetime
+    ) -> None:
+        """Park a message whose lease expired after its last allowed attempt."""
+        payload: dict[str, Any] = dict(msg.payload)
+        msg.status = "dead_lettered"
+        msg.locked_by = None
+        msg.locked_at = None
+        session.add(
+            DeadLetterMessage(
+                outbox_message_id=msg.id,
+                event_id=msg.event_id,
+                source_system=str(payload.get("source_system", "unknown")).lower(),
+                topic=msg.topic,
+                error_type="lease_expired",
+                error_message=msg.last_error or "lease expired",
+                payload=payload,
+                attempts=msg.attempts,
+                status="open",
+                created_at=current_time,
+            )
+        )
+        OUTBOX_PROCESSED_TOTAL.labels(topic=msg.topic, outcome="dead_lettered").inc()
 
     def process_message(
         self,

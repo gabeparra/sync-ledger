@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     outbox_batch_size: int = Field(default=25, ge=1, le=500)
     outbox_poll_interval_seconds: float = Field(default=1.0, gt=0.0)
     worker_id: str = Field(default="worker-local-1")
+    outbox_lease_timeout_seconds: float = Field(
+        default=300.0,
+        gt=0.0,
+        description="How long a 'processing' claim may sit before another worker reclaims it.",
+    )
 
     retry_max_attempts: int = Field(default=4, ge=1, le=20)
     retry_base_delay_seconds: float = Field(default=2.0, ge=0.0)
